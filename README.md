@@ -2,7 +2,9 @@
 
 ## Description
 
-This is a trial project to test the sqlc tool.
+This is a trial project to test the sqlc and sql-migrate and air tools.
+
+## How to run
 
 1. install task
 
@@ -12,25 +14,25 @@ echo 'PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.zlogin
 source ~/.zlogin
 ```
 
-1. run task to setup
+2. run task to setup
 
 ```bash
 task setup
 ```
 
-1. setup database
+3. setup database
 
 ```bash
 task setup-db
 ```
 
-1. run task to generate sqlc
+4. run task to generate sqlc
 
 ```bash
 sqlc generate
 ```
 
-1. run server
+5. run server
 
 ```bash
 air -c .air.toml
