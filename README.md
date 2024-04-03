@@ -2,7 +2,7 @@
 
 ## Description
 
-This is a trial project to test the sqlc and sql-migrate and air tools.
+This is a trial project to test the sqlc and task, sql-migrate and air tools.
 
 ## How to run
 
