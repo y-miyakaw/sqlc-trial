@@ -1,3 +1,2 @@
 tmp
-gen/sqlc/*
-!gen/sqlc/.gitkeep
+logs

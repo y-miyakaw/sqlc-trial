@@ -1,1 +1,1 @@
-curl http://localhost:8080/products/
+curl http://localhost:8099/products/

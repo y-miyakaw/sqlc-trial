@@ -1,1 +1,1 @@
-curl -X DELETE http://localhost:8080/products/2
+curl -X DELETE http://localhost:8099/products/2
