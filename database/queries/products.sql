@@ -1,25 +1,68 @@
 -- name: GetProduct :one
-SELECT * FROM products WHERE id = $1;
+SELECT *
+FROM products
+WHERE id = sqlc.arg(id);
+
+-- name: GetAllCompanies :many
+SELECT *
+FROM company;
 
 -- name: GetAllProducts :many
-SELECT * FROM products;
+SELECT *
+FROM products;
 
--- name: GetProductsByUserIDAndColor :many
-SELECT * FROM products
-WHERE (user_id = COALESCE($1, user_id))
-AND (color = COALESCE($2, color))
-AND (name =  COALESCE(NULLIF($3, ''), name));
+-- name: GetProductsByNameOrPriceOrCompanyID :many
+SELECT *
+FROM products
+WHERE 1=1
+AND (
+    CASE
+        WHEN sqlc.narg(name)::text IS NULL THEN TRUE
+        ELSE name = sqlc.narg(name)
+    END
+)
+AND (
+    CASE
+        WHEN sqlc.narg(price)::integer IS NULL THEN TRUE
+        ELSE price = sqlc.narg(price)
+    END
+)
+AND (
+    CASE
+        WHEN sqlc.narg(company_id)::integer IS NULL THEN TRUE
+        ELSE name = sqlc.narg(company_id)
+    END
+);
 
--- name: GetProductsByIDsAndColor :many
-SELECT * FROM products
-WHERE (COALESCE(NULLIF($1, '')::text[], ARRAY[]::text[]) = ARRAY[]::text[] OR id = ANY($1::text[]))
-AND (color = COALESCE($2, color));
 
--- name: CreateProduct :one
-INSERT INTO products (id, user_id, name, price, identifier, color) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;
+-- name: GetProductsAndCompanyByCompanyID :many
+SELECT *
+FROM products
+JOIN company ON company.id = products.company_id
+WHERE company.id = sqlc.arg(id);
 
--- name: UpdateProduct :one
-UPDATE products SET user_id = $2, name = $3, price = $4 WHERE id = $1 RETURNING *;
+-- name: CreateProductWithReturning :one
+INSERT INTO products (name, price, company_id)
+VALUES (sqlc.narg(name), sqlc.narg(price), sqlc.narg(company_id))
+RETURNING *;
 
--- name: DeleteProduct :one
-DELETE FROM products WHERE id = $1 RETURNING *;
+-- name: CreateProductWithoutReturning :exec
+INSERT INTO products (name, price, company_id)
+VALUES (sqlc.narg(name), sqlc.narg(price), sqlc.narg(company_id));
+
+-- name: CreateCompanyWithoutReturning :exec
+INSERT INTO company (name, address, person)
+VALUES (sqlc.arg(name), sqlc.narg(address), sqlc.narg(person));
+
+-- name: UpdateProduct :exec
+UPDATE products
+SET
+    name = sqlc.narg(name),
+    price = sqlc.narg(price),
+    company_id = sqlc.narg(company_id)
+WHERE id = sqlc.arg(id);
+
+-- name: DeleteProduct :exec
+DELETE
+FROM products
+WHERE id = sqlc.arg(id);

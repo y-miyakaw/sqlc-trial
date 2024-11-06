@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"sqlc-trial/gen/sqlc"
-	"strings"
+	"strconv"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo"
@@ -21,6 +22,12 @@ type requestBody struct {
 	Color  string `json:"color"`
 }
 
+type getProductsByNameOrPriceOrCompanyIDRequest struct {
+	Name      string `json:"name"`
+	Price     string `json:"price"`
+	CompanyID string `json:"company_id"`
+}
+
 type GetProductsByIDsAndColorRequest struct {
 	IDs   []string `json:"ids"`
 	Color string   `json:"color"`
@@ -32,11 +39,12 @@ func main() {
 	p := e.Group("/products")
 	p.GET("/:id", getProduct())
 	p.GET("/", getAllProducts())
-	p.POST("/search", getProductByUserIDAndNameAndColor())
-	p.POST("/searchids", getProductByIDsAndName())
-	p.POST("/", createProduct())
-	p.PUT("/:id", updateProduct())
-	p.DELETE("/:id", deleteProduct())
+	p.POST("/search", getProductsByNameOrPriceOrCompanyID())
+	// p.GET("/company/:id", getProductsAndCompanyByCompanyID())
+	// p.POST("/returning", createProductWithReturning())
+	// p.POST("/", createProductWithoutReturning())
+	// p.PUT("/:id", updateProduct())
+	// p.DELETE("/:id", deleteProduct())
 	e.Logger.Fatal(e.Start("localhost:8099"))
 }
 
@@ -61,46 +69,55 @@ func seedItems() {
 	defer db.Close()
 	ctx := context.Background()
 	q := sqlc.New(db)
-	items, err := q.GetAllProducts(ctx)
-	fmt.Println(items)
+	products, err := q.GetAllProducts(ctx)
 	if err != nil {
-		log.Printf("q.GetAllProducts: %v", err)
+		log.Fatalf("q.GetAllProducts: %v", err)
 	}
-	if len(items) == 0 {
-		var sampleProducts = []sqlc.Product{
+	if len(products) == 0 {
+		sampleProducts := []sqlc.CreateProductWithoutReturningParams{
 			{
-				ID:     "1",
-				UserID: sql.NullString{String: "1", Valid: true},
-				Name:   "sample1",
-				Price:  "100",
-				Color:  stringToNullString("black"),
+				Name:      sql.NullString{String: "product A", Valid: true},
+				Price:     sql.NullInt32{Int32: 1000, Valid: true},
+				CompanyID: sql.NullInt32{Int32: 1, Valid: true},
 			},
 			{
-				ID:     "2",
-				UserID: sql.NullString{String: "1", Valid: true},
-				Name:   "sample2",
-				Price:  "200",
-				Color:  stringToNullString("red"),
+				Name:      sql.NullString{String: "product B", Valid: true},
+				Price:     sql.NullInt32{Int32: 2000, Valid: true},
+				CompanyID: sql.NullInt32{Int32: 1, Valid: true},
 			},
 			{
-				ID:     "3",
-				UserID: sql.NullString{String: "1", Valid: true},
-				Name:   "sample3",
-				Price:  "300",
-				Color:  stringToNullString("red"),
+				Name:      sql.NullString{String: "product C", Valid: true},
+				Price:     sql.NullInt32{Int32: 1500, Valid: true},
+				CompanyID: sql.NullInt32{Int32: 2, Valid: true},
 			},
 		}
 
-		for _, p := range sampleProducts {
-			_, err := q.CreateProduct(ctx, sqlc.CreateProductParams{
-				ID:     p.ID,
-				UserID: p.UserID,
-				Name:   p.Name,
-				Price:  p.Price,
-				Color:  p.Color,
-			})
-			if err != nil {
-				log.Printf("q.CreateProduct: %v", err)
+		for _, param := range sampleProducts {
+			if err := q.CreateProductWithoutReturning(ctx, param); err != nil {
+				log.Fatalf("q.CreateProduct: %v", err)
+			}
+		}
+	}
+	companies, err := q.GetAllCompanies(ctx)
+	if err != nil {
+		log.Fatalf("q.GetAllProducts: %v", err)
+	}
+	if len(companies) == 0 {
+		sampleCompanies := []sqlc.CreateCompanyWithoutReturningParams{
+			{
+				Name:    "company A",
+				Address: sql.NullString{String: "address A", Valid: true},
+				Person:  sql.NullString{String: "person A", Valid: true},
+			},
+			{
+				Name:    "company B",
+				Address: sql.NullString{String: "address B", Valid: true},
+				Person:  sql.NullString{String: "person B", Valid: true},
+			},
+		}
+		for _, param := range sampleCompanies {
+			if err := q.CreateCompanyWithoutReturning(ctx, param); err != nil {
+				log.Fatalf("q.CreateCompany: %v", err)
 			}
 		}
 	}
@@ -112,14 +129,20 @@ func getProduct() echo.HandlerFunc {
 		defer db.Close()
 		ctx := context.Background()
 		id := c.Param("id")
+		param, err := strconv.Atoi(id)
+		if err != nil {
+			log.Printf("strconv.Atoi: %v", err)
+			return c.JSON(http.StatusBadRequest, "invalid id")
+		}
 		q := sqlc.New(db)
-		i, err := q.GetProduct(ctx, id)
+		i, err := q.GetProduct(ctx, int32(param))
 		if err != nil {
 			log.Printf("q.GetProduct: %v", err)
+			return c.JSON(http.StatusInternalServerError, "error")
 		}
 
 		log.Println("getProduct")
-		return c.JSON(200, i)
+		return c.JSON(http.StatusOK, i)
 	}
 }
 
@@ -132,59 +155,37 @@ func getAllProducts() echo.HandlerFunc {
 		items, err := q.GetAllProducts(ctx)
 		if err != nil {
 			log.Printf("q.GetAllProducts: %v", err)
+			return c.JSON(http.StatusInternalServerError, "error")
 		}
 		log.Println("getAllProducts")
 		return c.JSON(200, items)
 	}
 }
 
-func getProductByUserIDAndNameAndColor() echo.HandlerFunc {
+func getProductsByNameOrPriceOrCompanyID() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		db := dbConn()
 		defer db.Close()
 		ctx := context.Background()
-		var requestBody requestBody
-		if err := c.Bind(&requestBody); err != nil {
-			log.Printf("c.Bind: %v", err)
-		}
 		q := sqlc.New(db)
-		args := sqlc.GetProductsByUserIDAndColorParams{
-			UserID:  stringToNullString(requestBody.UserID),
-			Color:   stringToNullString(requestBody.Color),
-			Column3: requestBody.Name,
-		}
-		fmt.Println(args)
-		i, err := q.GetProductsByUserIDAndColor(ctx, args)
-		if err != nil {
-			log.Printf("q.GetProductByUserIDAndName: %v", err)
-		}
-		log.Println("getProductByUserIDAndName")
-		return c.JSON(200, i)
-	}
-}
-
-func getProductByIDsAndName() echo.HandlerFunc {
-	return func(c echo.Context) error {
-		db := dbConn()
-		defer db.Close()
-		ctx := context.Background()
-		var req GetProductsByIDsAndColorRequest
+		var req getProductsByNameOrPriceOrCompanyIDRequest
 		if err := c.Bind(&req); err != nil {
 			log.Printf("c.Bind: %v", err)
+			return c.JSON(http.StatusBadRequest, "error")
 		}
-		q := sqlc.New(db)
-		idsJoined := "{" + strings.Join(req.IDs, ",") + "}"
-		args := sqlc.GetProductsByIDsAndColorParams{
-			Column1: idsJoined,
-			Color:   stringToNullString(req.Color),
+		params := sqlc.GetProductsByNameOrPriceOrCompanyIDParams{
+			Name:      stringToNullString(req.Name),
+			Price:     stringToInt32(req.Price),
+			CompanyID: stringToInt32(req.CompanyID),
 		}
-		fmt.Println(args)
-		i, err := q.GetProductsByIDsAndColor(ctx, args)
+		fmt.Println(params)
+		items, err := q.GetProductsByNameOrPriceOrCompanyID(ctx, params)
 		if err != nil {
-			log.Printf("q.GetProductsByIDsAndColor: %v", err)
+			log.Printf("q.GetAllProducts: %v", err)
+			return c.JSON(http.StatusInternalServerError, "error")
 		}
-		log.Println("GetProductsByIDsAndColor")
-		return c.JSON(200, i)
+		log.Println("getAllProducts")
+		return c.JSON(http.StatusOK, items)
 	}
 }
 
@@ -195,66 +196,14 @@ func stringToNullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
-func createProduct() echo.HandlerFunc {
-	return func(c echo.Context) error {
-		db := dbConn()
-		defer db.Close()
-		var body requestBody
-		if err := c.Bind(&body); err != nil {
-			log.Printf("c.Bind: %v", err)
-		}
-		ctx := context.Background()
-		q := sqlc.New(db)
-		i, err := q.CreateProduct(ctx, sqlc.CreateProductParams{
-			UserID: sql.NullString{String: body.UserID, Valid: true},
-			Name:   body.Name,
-			Price:  body.Price,
-		})
-		if err != nil {
-			log.Printf("q.CreateProduct: %v", err)
-		}
-		log.Println("createProduct")
-		return c.JSON(200, i)
+func stringToInt32(s string) sql.NullInt32 {
+	if s == "" {
+		return sql.NullInt32{Int32: 0, Valid: false}
 	}
-}
-
-func updateProduct() echo.HandlerFunc {
-	return func(c echo.Context) error {
-		db := dbConn()
-		defer db.Close()
-		id := c.Param("id")
-		var body requestBody
-		if err := c.Bind(&body); err != nil {
-			log.Printf("c.Bind: %v", err)
-		}
-		ctx := context.Background()
-		q := sqlc.New(db)
-		i, err := q.UpdateProduct(ctx, sqlc.UpdateProductParams{
-			ID:     id,
-			UserID: sql.NullString{String: body.UserID, Valid: true},
-			Name:   body.Name,
-			Price:  body.Price,
-		})
-		if err != nil {
-			log.Printf("q.UpdateProduct: %v", err)
-		}
-		log.Println("updateProduct")
-		return c.JSON(200, i)
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		log.Printf("strconv.Atoi: %v", err)
+		return sql.NullInt32{Int32: 0, Valid: false}
 	}
-}
-
-func deleteProduct() echo.HandlerFunc {
-	return func(c echo.Context) error {
-		db := dbConn()
-		defer db.Close()
-		id := c.Param("id")
-		ctx := context.Background()
-		q := sqlc.New(db)
-		i, err := q.DeleteProduct(ctx, id)
-		if err != nil {
-			log.Printf("q.DeleteProduct: %v", err)
-		}
-		log.Println("deleteProduct")
-		return c.JSON(200, i)
-	}
+	return sql.NullInt32{Int32: int32(i), Valid: true}
 }
